@@ -53,7 +53,7 @@ func (s *chatClient) run(ctx *cli.Context) error {
 	defer conn.Close()
 	c := pb.NewChatServerClient(conn)
 
-	// run client goroutines
+	// run goroutines
 	g := run.Group{}
 	errChan := make(chan error)
 
