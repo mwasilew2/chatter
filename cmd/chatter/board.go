@@ -86,8 +86,9 @@ func (s *chatBoard) run(ctx *cli.Context) error {
 		}
 		return nil
 	}, func(err error) {
+		// TODO: this doesn't actually terminate the goroutine
 		level.Debug(s.logger).Log("msg", "closing printer goroutine")
-		close(donePrinter) // TODO: this doesn't actually terminate the goroutine
+		close(donePrinter)
 	})
 
 	return g.Run()
