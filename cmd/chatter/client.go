@@ -5,10 +5,13 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/muesli/cancelreader"
+	"github.com/oklog/run"
 	"github.com/urfave/cli/v2"
 	"google.golang.org/grpc/credentials/insecure"
 
@@ -26,7 +29,7 @@ const (
 )
 
 func (s *chatClient) run(ctx *cli.Context) error {
-	level.Info(s.logger).Log("msg", "running client")
+	level.Debug(s.logger).Log("msg", "starting client")
 
 	// adjust log level
 	logLvl := ctx.Int(logLevelFlag)
@@ -40,7 +43,6 @@ func (s *chatClient) run(ctx *cli.Context) error {
 	case 3:
 		s.logger = level.NewFilter(s.logger, level.AllowError())
 	}
-	level.Debug(s.logger).Log("msg", "log level set", "level", logLvl)
 
 	// set up grpc client
 	port := ctx.Int("port")
@@ -51,31 +53,70 @@ func (s *chatClient) run(ctx *cli.Context) error {
 	defer conn.Close()
 	c := pb.NewChatServerClient(conn)
 
-	// print errors as they come in
+	// run client goroutines
+	g := run.Group{}
 	errChan := make(chan error)
-	go func() {
+
+	// listen for termination signals
+	osSigChan := make(chan os.Signal)
+	signal.Notify(osSigChan, os.Kill, os.Interrupt)
+	done := make(chan struct{})
+	g.Add(func() error {
+		select {
+		case sig := <-osSigChan:
+			level.Debug(s.logger).Log("msg", "caught signal", "signal", sig.String())
+			return fmt.Errorf("received signal: %s", sig.String())
+		case <-done:
+			level.Debug(s.logger).Log("msg", "closing signal catching goroutine")
+		}
+		return nil
+	}, func(err error) {
+		close(done)
+	})
+
+	// print errors as they come in
+	g.Add(func() error {
 		for e := range errChan {
-			level.Error(s.logger).Log("msg", "error received", "err", e)
+			level.Error(s.logger).Log("err", fmt.Errorf("error %w", e))
 		}
-	}()
+		return nil
+	}, func(err error) {
+		level.Debug(s.logger).Log("msg", "closing error printing goroutine")
+		close(errChan)
+	})
 
-	// read input and send messages
-	scanner := bufio.NewScanner(os.Stdin)
-	for scanner.Scan() {
-		line := scanner.Text()
-		ctext, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		r, err := c.Send(ctext, &pb.SendRequest{Message: line})
-		if err != nil {
-			errChan <- fmt.Errorf("failed to send message: %w", err)
-			continue
-		}
-		level.Info(s.logger).Log("msg", "message successfully sent", "response", r)
+	// read input from the user and send messages to the grpc server
+	{
+		var r cancelreader.CancelReader
+		var err error
+		g.Add(func() error {
+			r, err = cancelreader.NewReader(os.Stdin)
+			if err != nil {
+				return fmt.Errorf("failed to create cancel reader: %w", err)
+			}
+			scanner := bufio.NewScanner(r)
+			level.Info(s.logger).Log("msg", "enter message to send")
+			for scanner.Scan() {
+				line := scanner.Text()
+				ctext, cancel := context.WithTimeout(context.Background(), time.Second)
+				defer cancel()
+				r, err := c.Send(ctext, &pb.SendRequest{Message: line})
+				if err != nil {
+					errChan <- fmt.Errorf("failed to send message: %w", err)
+					cancel()
+					continue
+				}
+				level.Debug(s.logger).Log("msg", "message sent", "response", r)
+			}
+			if err := scanner.Err(); err != nil {
+				return fmt.Errorf("failed to read input: %w", err)
+			}
+			return nil
+		}, func(err error) {
+			level.Debug(s.logger).Log("msg", "closing input reading goroutine")
+			r.Cancel()
+		})
 	}
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("failed to read input: %w", err)
-	}
-	close(errChan)
 
-	return nil
+	return g.Run()
 }
