@@ -31,8 +31,14 @@ func (s *chatServer) Send(ctx context.Context, request *pb.SendRequest) (*pb.Sen
 }
 
 func (s *chatServer) Receive(request *pb.ReceiveRequest, server pb.ChatServer_ReceiveServer) error {
-	//TODO implement me
-	panic("implement me")
+	level.Debug(s.logger).Log("msg", "received request for messages")
+	for _, message := range messagesBuffer {
+		if err := server.Send(&pb.ReceiveResponse{Message: message}); err != nil {
+			return fmt.Errorf("failed to send message: %w", err)
+		}
+	}
+	return nil
+
 }
 
 func (s *chatServer) run(ctx *cli.Context) error {
