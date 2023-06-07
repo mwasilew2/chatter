@@ -93,8 +93,7 @@ func main() {
 		},
 	}
 
-	err := app.Run(os.Args)
-	if err != nil {
+	if err := app.Run(os.Args); err != nil {
 		level.Error(logger).Log("err", fmt.Errorf("error running the command: %w", err))
 		os.Exit(-1)
 	}

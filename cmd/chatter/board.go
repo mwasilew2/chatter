@@ -2,16 +2,17 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"io"
 	"os"
 	"os/signal"
-	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	pb "github.com/mwasilew2/chatter/gen"
 	"github.com/oklog/run"
+	"github.com/oklog/ulid"
 	"github.com/urfave/cli/v2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -19,6 +20,8 @@ import (
 
 type chatBoard struct {
 	logger log.Logger
+
+	id ulid.ULID
 }
 
 func (s *chatBoard) run(ctx *cli.Context) error {
@@ -32,6 +35,14 @@ func (s *chatBoard) run(ctx *cli.Context) error {
 	}
 	defer conn.Close()
 	c := pb.NewChatServerClient(conn)
+
+	// generate ulid
+	u, err := ulid.New(ulid.Now(), rand.Reader)
+	if err != nil {
+		return fmt.Errorf("failed to create a ulid for the board: %w", err)
+	}
+	s.id = u
+	level.Debug(s.logger).Log("msg", "generated ulid", "ulid", s.id.String())
 
 	// run goroutines
 	g := run.Group{}
@@ -54,11 +65,11 @@ func (s *chatBoard) run(ctx *cli.Context) error {
 	})
 
 	// print incoming messages
+	donePrinter := make(chan struct{})
 	g.Add(func() error {
-		ctext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		stream, err := c.Receive(ctext, &pb.ReceiveRequest{
-			LastId: 0,
+		stream, err := c.Receive(context.Background(), &pb.ReceiveRequest{
+			ClientId: s.id.String(),
+			LastId:   0,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to connect to stream: %w", err)
@@ -75,7 +86,8 @@ func (s *chatBoard) run(ctx *cli.Context) error {
 		}
 		return nil
 	}, func(err error) {
-
+		level.Debug(s.logger).Log("msg", "closing printer goroutine")
+		close(donePrinter) // TODO: this doesn't actually terminate the goroutine
 	})
 
 	return g.Run()
