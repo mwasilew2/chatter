@@ -24,25 +24,8 @@ type chatClient struct {
 	logger log.Logger
 }
 
-const (
-	logLevelFlag = "loglevel"
-)
-
 func (s *chatClient) run(ctx *cli.Context) error {
 	level.Debug(s.logger).Log("msg", "starting client")
-
-	// adjust log level
-	logLvl := ctx.Int(logLevelFlag)
-	switch logLvl {
-	case 0:
-		s.logger = level.NewFilter(s.logger, level.AllowDebug())
-	case 1:
-		s.logger = level.NewFilter(s.logger, level.AllowInfo())
-	case 2:
-		s.logger = level.NewFilter(s.logger, level.AllowWarn())
-	case 3:
-		s.logger = level.NewFilter(s.logger, level.AllowError())
-	}
 
 	// set up grpc client
 	port := ctx.Int("port")
