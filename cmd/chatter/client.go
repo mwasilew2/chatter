@@ -87,7 +87,7 @@ func (s *chatClient) run(ctx *cli.Context) error {
 
 	// read input from the user and send messages to the grpc server
 	{
-		var r cancelreader.CancelReader
+		var r cancelreader.CancelReader // bufio.Scanner.Scan() is a blocking call and it's impossible to close os.Stdin, so linux epoll has to be used, a library for that is used here instead of implementing it myself
 		var err error
 		g.Add(func() error {
 			r, err = cancelreader.NewReader(os.Stdin)
