@@ -19,13 +19,17 @@ import (
 )
 
 type chatBoard struct {
-	logger log.Logger
+	logger *log.Logger
 
 	id ulid.ULID
 }
 
+func NewChatBoard(logger *log.Logger) *chatBoard {
+	return &chatBoard{logger: logger}
+}
+
 func (s *chatBoard) run(ctx *cli.Context) error {
-	level.Debug(s.logger).Log("msg", "initializing board")
+	level.Debug(*s.logger).Log("msg", "initializing board")
 
 	// set up grpc client
 	port := ctx.Int("port")
@@ -42,7 +46,7 @@ func (s *chatBoard) run(ctx *cli.Context) error {
 		return fmt.Errorf("failed to create a ulid for the board: %w", err)
 	}
 	s.id = u
-	level.Debug(s.logger).Log("msg", "generated ulid", "ulid", s.id.String())
+	level.Debug(*s.logger).Log("msg", "generated ulid", "ulid", s.id.String())
 
 	// run goroutines
 	g := run.Group{}
@@ -54,10 +58,10 @@ func (s *chatBoard) run(ctx *cli.Context) error {
 	g.Add(func() error {
 		select {
 		case sig := <-osSigChan:
-			level.Debug(s.logger).Log("msg", "caught signal", "signal", sig.String())
+			level.Debug(*s.logger).Log("msg", "caught signal", "signal", sig.String())
 			return fmt.Errorf("caught signal: %s", sig.String())
 		case <-done:
-			level.Debug(s.logger).Log("msg", "closing signal catching goroutine")
+			level.Debug(*s.logger).Log("msg", "closing signal catching goroutine")
 		}
 		return nil
 	}, func(err error) {
@@ -82,12 +86,12 @@ func (s *chatBoard) run(ctx *cli.Context) error {
 			if err != nil {
 				return fmt.Errorf("failed to receive message: %w", err)
 			}
-			level.Info(s.logger).Log("msg", "message received", "message", r.Message)
+			level.Info(*s.logger).Log("msg", "message received", "message", r.Message)
 		}
 		return nil
 	}, func(err error) {
 		// TODO: this doesn't actually terminate the goroutine
-		level.Debug(s.logger).Log("msg", "closing printer goroutine")
+		level.Debug(*s.logger).Log("msg", "closing printer goroutine")
 		close(donePrinter)
 	})
 

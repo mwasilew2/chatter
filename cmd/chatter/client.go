@@ -21,11 +21,15 @@ import (
 )
 
 type chatClient struct {
-	logger log.Logger
+	logger *log.Logger
+}
+
+func NewChatClient(logger *log.Logger) *chatClient {
+	return &chatClient{logger: logger}
 }
 
 func (s *chatClient) run(ctx *cli.Context) error {
-	level.Debug(s.logger).Log("msg", "starting client")
+	level.Debug(*s.logger).Log("msg", "starting client")
 
 	// set up grpc client
 	port := ctx.Int("port")
@@ -47,10 +51,10 @@ func (s *chatClient) run(ctx *cli.Context) error {
 	g.Add(func() error {
 		select {
 		case sig := <-osSigChan:
-			level.Debug(s.logger).Log("msg", "caught signal", "signal", sig.String())
+			level.Debug(*s.logger).Log("msg", "caught signal", "signal", sig.String())
 			return fmt.Errorf("received signal: %s", sig.String())
 		case <-done:
-			level.Debug(s.logger).Log("msg", "closing signal catching goroutine")
+			level.Debug(*s.logger).Log("msg", "closing signal catching goroutine")
 		}
 		return nil
 	}, func(err error) {
@@ -60,11 +64,11 @@ func (s *chatClient) run(ctx *cli.Context) error {
 	// print errors as they come in
 	g.Add(func() error {
 		for e := range errChan {
-			level.Error(s.logger).Log("err", fmt.Errorf("error %w", e))
+			level.Error(*s.logger).Log("err", fmt.Errorf("error %w", e))
 		}
 		return nil
 	}, func(err error) {
-		level.Debug(s.logger).Log("msg", "closing error printing goroutine")
+		level.Debug(*s.logger).Log("msg", "closing error printing goroutine")
 		close(errChan)
 	})
 
@@ -78,7 +82,7 @@ func (s *chatClient) run(ctx *cli.Context) error {
 				return fmt.Errorf("failed to create cancel reader: %w", err)
 			}
 			scanner := bufio.NewScanner(r)
-			level.Info(s.logger).Log("msg", "enter message to send")
+			level.Info(*s.logger).Log("msg", "enter message to send")
 			for scanner.Scan() {
 				line := scanner.Text()
 				ctext, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -89,14 +93,14 @@ func (s *chatClient) run(ctx *cli.Context) error {
 					cancel()
 					continue
 				}
-				level.Debug(s.logger).Log("msg", "message sent", "response", r)
+				level.Debug(*s.logger).Log("msg", "message sent", "response", r)
 			}
 			if err := scanner.Err(); err != nil {
 				return fmt.Errorf("failed to read input: %w", err)
 			}
 			return nil
 		}, func(err error) {
-			level.Debug(s.logger).Log("msg", "closing input reading goroutine")
+			level.Debug(*s.logger).Log("msg", "closing input reading goroutine")
 			r.Cancel()
 		})
 	}

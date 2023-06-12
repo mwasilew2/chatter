@@ -16,9 +16,9 @@ const (
 func main() {
 	var logger log.Logger
 
-	c := &chatClient{}
-	s := &chatServer{}
-	b := &chatBoard{}
+	c := NewChatClient(&logger)
+	s := NewChatServer(&logger)
+	b := NewChatBoard(&logger)
 
 	app := &cli.App{
 		Name:  "chatter",
@@ -48,11 +48,6 @@ func main() {
 				logger = level.NewFilter(logger, level.AllowError())
 			}
 			level.Debug(logger).Log("msg", "finished initializing logging")
-
-			// inject logger into subcommands
-			c.logger = logger
-			s.logger = logger
-			b.logger = logger
 
 			return nil
 		},
