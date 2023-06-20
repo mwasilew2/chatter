@@ -70,8 +70,10 @@ func (b *ChatBoardCmd) Run(cmdCtx *cmdContext) error {
 
 	// print incoming messages
 	donePrinter := make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	g.Add(func() error {
-		stream, err := pbClient.Receive(context.Background(), &pb.ReceiveRequest{
+		stream, err := pbClient.Receive(ctx, &pb.ReceiveRequest{
 			ClientId: b.id.String(),
 			LastId:   0,
 		})
@@ -79,20 +81,32 @@ func (b *ChatBoardCmd) Run(cmdCtx *cmdContext) error {
 			return fmt.Errorf("failed to connect to stream: %w", err)
 		}
 		for {
-			r, err := stream.Recv()
-			if err == io.EOF {
-				break
+			select {
+			case <-stream.Context().Done():
+				if err := stream.Context().Err(); err != nil {
+					return fmt.Errorf("stream context error: %w", err)
+				}
+				return nil
+			case <-donePrinter:
+				b.logger.Debug("closed printer goroutine")
+				return nil
+			default:
+				r, err := stream.Recv() // this is a blocking call, can be canceled by closing the relevant context
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					return fmt.Errorf("failed to receive message: %w", err)
+				}
+				b.logger.Info("message received", "message", r.Message)
 			}
-			if err != nil {
-				return fmt.Errorf("failed to receive message: %w", err)
-			}
-			b.logger.Info("message received", "message", r.Message)
 		}
 		return nil
 	}, func(err error) {
-		// TODO: this doesn't actually terminate the goroutine
 		b.logger.Debug("closing printer goroutine")
 		close(donePrinter)
+		cancel()
+		b.logger.Debug("closed printer goroutine")
 	})
 
 	return g.Run()
