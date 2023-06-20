@@ -1,95 +1,49 @@
 package main
 
 import (
-	"fmt"
 	"os"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
-	"github.com/urfave/cli/v2"
+	"golang.org/x/exp/slog"
+
+	"github.com/alecthomas/kong"
 )
 
-const (
-	logLevelFlag = "loglevel"
-)
+var programLevel = new(slog.LevelVar)
+
+type cmdContext struct {
+	Logger *slog.Logger
+}
+
+var kongApp struct {
+	LogLevel int `short:"l" help:"Log level: 0 (debug), 1 (info), 2 (warn), 3 (error)" default:"1"`
+
+	ChatServer ChatServerCmd `cmd:"" help:"Start a chat server."`
+	Client     ChatClientCmd `cmd:"" help:"Start a chat client."`
+	Board      ChatBoardCmd  `cmd:"" help:"Start a chat board."`
+}
 
 func main() {
-	var logger log.Logger
+	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: programLevel}))
+	slog.SetDefault(logger)
 
-	c := NewChatClient(&logger)
-	s := NewChatServer(&logger)
-	b := NewChatBoard(&logger)
+	kongCtx := kong.Parse(&kongApp,
+		kong.Description("A simple chat application."),
+		kong.UsageOnError(),
+		kong.Vars{
 
-	app := &cli.App{
-		Name:  "chatter",
-		Usage: "",
-		Flags: []cli.Flag{
-			&cli.IntFlag{
-				Name:  logLevelFlag,
-				Value: 1,
-				Usage: "Log level, 0-3, 0 debug, 1 info, 2 warn, 3 error",
-			},
+			"version": "0.0.1", // TODO: Use goreleaser to set this?
 		},
-		Before: func(ctx *cli.Context) error {
-
-			// set up logger
-			logLvl := ctx.Int(logLevelFlag)
-			logger = log.NewJSONLogger(log.NewSyncWriter(os.Stderr))
-			logger = level.NewFilter(logger, level.AllowAll())
-			logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", log.DefaultCaller)
-			switch logLvl {
-			case 0:
-				logger = level.NewFilter(logger, level.AllowDebug())
-			case 1:
-				logger = level.NewFilter(logger, level.AllowInfo())
-			case 2:
-				logger = level.NewFilter(logger, level.AllowWarn())
-			case 3:
-				logger = level.NewFilter(logger, level.AllowError())
-			}
-			level.Debug(logger).Log("msg", "finished initializing logging")
-
-			return nil
-		},
-		Commands: []*cli.Command{
-			{
-				Name:   "client",
-				Action: c.run,
-				Flags: []cli.Flag{
-					&cli.IntFlag{
-						Name:  "port",
-						Value: 8080,
-						Usage: "Port to connect to",
-					},
-				},
-			},
-			{
-				Name:   "server",
-				Action: s.run,
-				Flags: []cli.Flag{
-					&cli.IntFlag{
-						Name:  "port",
-						Value: 8080,
-						Usage: "Port to connect to",
-					},
-				},
-			},
-			{
-				Name:   "board",
-				Action: b.run,
-				Flags: []cli.Flag{
-					&cli.IntFlag{
-						Name:  "port",
-						Value: 8080,
-						Usage: "Port to connect to",
-					},
-				},
-			},
-		},
+	)
+	switch kongApp.LogLevel {
+	case 0:
+		programLevel.Set(slog.LevelDebug)
+	case 1:
+		programLevel.Set(slog.LevelInfo)
+	case 2:
+		programLevel.Set(slog.LevelWarn)
+	case 3:
+		programLevel.Set(slog.LevelError)
 	}
-
-	if err := app.Run(os.Args); err != nil {
-		level.Error(logger).Log("err", fmt.Errorf("error running the command: %w", err))
-		os.Exit(-1)
-	}
+	err := kongCtx.Run(&cmdContext{Logger: logger})
+	kongCtx.FatalIfErrorf(err)
 }
