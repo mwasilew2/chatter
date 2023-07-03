@@ -3,7 +3,7 @@ module github.com/mwasilew2/chatter
 go 1.20
 
 require (
-	github.com/alecthomas/kong v0.7.1
+	github.com/alecthomas/kong v0.8.0
 	github.com/muesli/cancelreader v0.2.2
 	github.com/oklog/run v1.1.0
 	github.com/oklog/ulid v1.3.1
